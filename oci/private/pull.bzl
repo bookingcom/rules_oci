@@ -34,6 +34,12 @@ _IMAGE_REFERENCE_ATTRS = {
         default = "@oci_auth_config//:standard_authorization_config_path",
         allow_single_file = True,
     ),
+    "cred_helper": attr.label(
+        doc ="Label to a text file that is being used for authentication, this file should be executable, by default this argument is ignored",
+        default = None,
+        allow_single_file = True,
+        mandatory = False,
+    )
 }
 
 # Unfortunately bazel downloader doesn't let us sniff the WWW-Authenticate header, therefore we need to
@@ -176,10 +182,20 @@ def _fetch_auth_via_creds_helper(rctx, raw_host, helper_name):
         executable,
         content = """\
 #!/usr/bin/env bash
+export PATH=$(pwd):${{PATH}}
 exec "docker-credential-{}" get <<< "$1"
         """.format(helper_name),
     )
+
+    if rctx.attr.cred_helper:
+        # if the user passed a cred helper script, then copy the content into the current directory
+        rctx.file(
+            rctx.attr.cred_helper.name,
+            content = rctx.read(rctx.attr.cred_helper)
+        )
+
     result = rctx.execute([rctx.path(executable), raw_host])
+
     if result.return_code:
         fail("credential helper failed: \nSTDOUT:\n{}\nSTDERR:\n{}".format(result.stdout, result.stderr))
 
